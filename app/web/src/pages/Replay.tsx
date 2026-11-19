@@ -151,7 +151,6 @@ function LineReplay({ release, line, nets, query }: Props) {
                 return (
                   <span className="word" key={wi} aria-hidden>
                     {[...word].map((c, i) => <span className="ch" style={{ ['--i' as string]: start + i }} key={i}>{c}</span>)}
-                    {wi < words.length - 1 ? ' ' : ''}
                   </span>
                 )
               })}

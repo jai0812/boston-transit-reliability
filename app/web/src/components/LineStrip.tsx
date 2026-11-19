@@ -16,7 +16,6 @@ type Props = {
   onSelect: (id: string) => void
 }
 
-const H = 236
 const X0 = 70
 const LINE_Y = 84
 const LANE_OFF = 30
@@ -31,6 +30,8 @@ export function LineStrip(p: Props) {
   // Trains heading in the strip's reading direction ride the lower lane.
   const laneY = (dir: number) => (dir === p.orderDirection ? LINE_Y + LANE_OFF : LINE_Y - LANE_OFF)
   const rotate = n > 24 ? 50 : n > 14 ? 38 : 28
+  // Leave room below the track for the longest slanted station name.
+  const H = n > 24 ? 300 : n > 14 ? 262 : 236
 
   const place = (list: TrainPos[]) =>
     list.flatMap((t) => {

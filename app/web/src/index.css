@@ -361,3 +361,5 @@ footer .wrap { display: flex; flex-wrap: wrap; gap: 8px 22px; }
   .score .dot[fill='var(--c)'] { fill: color-mix(in oklab, var(--c) 80%, white); }
 }
 .sign-name .word { display: inline-block; white-space: nowrap; }
+/* Word gaps live in CSS: a trailing space inside an inline-block collapses. */
+.sign-name .word + .word { margin-left: 0.26em; }
