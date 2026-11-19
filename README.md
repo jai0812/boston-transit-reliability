@@ -1,13 +1,44 @@
+<div align="center">
+
+<a href="https://mbta.sharmajai.com"><img src="docs/images/social-preview.png" width="100%" alt="Boston Subway Replay: a live map of the Blue, Red and Green Lines with the headline 'Every train time is a guess. This shows how good the guess was.'" /></a>
+
 # Boston Subway Replay
 
-**How much should you trust a train arrival time?** A forecasting and visualization system for the MBTA
-Blue, Red and Green Lines that predicts a *range* for every scheduled train, then checks that range
-against what really happened.
+**How much should you trust a train arrival time?**<br/>
+Day-ahead forecasts with calibrated uncertainty for every scheduled train on Boston's Blue, Red and
+Green Lines, checked against what really happened.
 
-**Live demo:** https://mbta.sharmajai.com · Python · DuckDB · LightGBM · conformal prediction · FastAPI ·
-React · TypeScript · MapLibre
+<a href="https://mbta.sharmajai.com"><img src="https://img.shields.io/badge/Live%20demo-mbta.sharmajai.com-00843D?style=flat-square" alt="Live demo" /></a>
+<a href="https://github.com/jai0812/boston-transit-reliability/actions/workflows/pages.yml"><img src="https://img.shields.io/github/actions/workflow/status/jai0812/boston-transit-reliability/pages.yml?branch=main&label=deploy&style=flat-square" alt="Deploy status" /></a>
+<a href="https://github.com/jai0812/boston-transit-reliability/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/jai0812/boston-transit-reliability/ci.yml?branch=main&label=tests&style=flat-square" alt="Test status" /></a>
+<img src="https://img.shields.io/badge/arrivals%20checked-12.5M-003DA5?style=flat-square" alt="12.5 million scheduled arrivals checked" />
+<img src="https://img.shields.io/badge/coverage-75%E2%80%9382%25%20(target%2080%25)-DA291C?style=flat-square" alt="Coverage 75 to 82 percent against an 80 percent target" />
+<a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-30363d?style=flat-square" alt="MIT license" /></a>
+
+<sub>Python · DuckDB · LightGBM · conformal prediction · FastAPI · React · TypeScript · MapLibre</sub>
+
+</div>
 
 > Unofficial project. Not affiliated with or endorsed by the MBTA. Built on MBTA's public data.
+
+<table>
+  <tr>
+    <td width="58%" valign="top">
+      <a href="https://mbta.sharmajai.com/#/replay?line=Green"><img src="docs/images/replay-green.png" alt="Green Line replay at Kenmore: station sign, LED countdown with ranges, network schematic of the B, C, D and E branches, and the strip map with recorded and forecast trains" /></a>
+      <br/><sub><b>Replay.</b> Kenmore on the Green Line. The countdown shows ranges, not minutes; the schematic shows every train on all four branches.</sub>
+    </td>
+    <td width="42%" valign="top">
+      <a href="https://mbta.sharmajai.com/#/results?line=Red"><img src="docs/images/results.png" alt="Results page for the Red Line: per-line cards and the benchmark table" /></a>
+      <br/><sub><b>Results.</b> Every system scored once per line on held-out weeks.</sub>
+      <br/><br/>
+      <a href="https://mbta.sharmajai.com/"><img src="docs/images/scorecards.png" alt="Home page cards: 75, 82 and 80 of every 100 trains arrived inside their range" /></a>
+      <br/><sub><b>For everyone.</b> "N of every 100 trains arrived inside their range."</sub>
+    </td>
+  </tr>
+</table>
+
+<a href="https://mbta.sharmajai.com/#/replay?line=Green"><img src="docs/images/timeline-map.png" width="100%" alt="Forecast timeline with ranges and recorded arrivals beside the system map with live trains" /></a>
+<sub><b>Forecast vs. what happened.</b> Each row is a scheduled train: grey circle = timetable, band = 80% range, bar = median, orange diamond = recorded arrival (revealed as the replay clock reaches it).</sub>
 
 ---
 
@@ -373,3 +404,9 @@ Ranked in [docs/EXTENSIONS.md](docs/EXTENSIONS.md):
 - Ke et al. (2017). *LightGBM: A Highly Efficient Gradient Boosting Decision Tree.* NeurIPS.
 - Probabilistic transit travel-time prediction, *Transportation Research Part C* (2026).
 - Basemap © OpenStreetMap contributors via OpenFreeMap.
+
+## License
+
+Code is MIT-licensed ([LICENSE](LICENSE)). The data in `app/web/public/api` is derived from the MBTA's
+public performance data and GTFS archive and remains subject to the
+[MBTA developer license agreement](https://www.mass.gov/files/documents/2017/10/27/develop_license_agree_0.pdf) and [terms of use](https://www.mbta.com/policies/terms-use).
