@@ -1,0 +1,19 @@
+# Service-date windows. Complete service dates only; one-week embargo between blocks.
+route_id: Blue
+timezone: America/New_York
+forecast_origin_local: "20:00"     # day before the service date
+history_start: 2025-06-23          # extra weeks so the first training dates have history features
+splits:
+  train:       [2025-07-07, 2026-03-22]
+  validation:  [2026-03-30, 2026-04-26]
+  calibration: [2026-05-04, 2026-05-31]
+  test:        [2026-06-08, 2026-07-05]
+history_lag_days: 2                # history features stop at D-2
+time_buckets:                      # local scheduled hour -> bucket
+  early: [0, 7]
+  am_peak: [7, 10]
+  midday: [10, 16]
+  pm_peak: [16, 19]
+  evening: [19, 22]
+  late: [22, 30]
+peak_buckets: [am_peak, pm_peak]

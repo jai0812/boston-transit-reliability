@@ -1,0 +1,40 @@
+# LightGBM quantile models (one per alpha). Starting values from the project guide.
+quantiles: [0.10, 0.50, 0.90]
+nominal_coverage: 0.80
+base_params:
+  objective: quantile
+  learning_rate: 0.05
+  n_estimators: 800
+  num_leaves: 31
+  max_depth: 6
+  min_child_samples: 100
+  reg_lambda: 1.0
+  colsample_bytree: 0.85
+  subsample: 1.0
+  subsample_freq: 0
+  random_state: 42
+  n_jobs: 4
+  deterministic: true
+  force_row_wise: true
+  verbose: -1
+early_stopping_rounds: 50
+# Bounded search, selected by mean validation pinball loss across the three quantiles.
+search:
+  - {num_leaves: 15, max_depth: 4, min_child_samples: 100}
+  - {num_leaves: 31, max_depth: 6, min_child_samples: 50}
+  - {num_leaves: 31, max_depth: 6, min_child_samples: 100}
+  - {num_leaves: 31, max_depth: 6, min_child_samples: 200}
+  - {num_leaves: 31, max_depth: 6, min_child_samples: 100, learning_rate: 0.10}
+feature_sets:
+  schedule: [stop_id, direction_id, stop_sequence, weekday, is_weekend, sched_hour,
+             tod_sin, tod_cos, sched_gap_s, day_planned_trips]
+  schedule_history: [stop_id, direction_id, stop_sequence, weekday, is_weekend, sched_hour,
+                     tod_sin, tod_cos, sched_gap_s, day_planned_trips,
+                     hist7_median_s, hist28_median_s, hist28_p90_s, hist28_count, hist_missing]
+categorical: [stop_id]
+historical_baseline:
+  min_rows: 50
+# Release criteria fixed before the test set is scored.
+release_criteria:
+  coverage_band: [0.75, 0.85]
+  beat_historical_mae: true
