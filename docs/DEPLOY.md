@@ -1,44 +1,46 @@
-# Deploying to mbta.sharmajai.com
+# Deployment: mbta.sharmajai.com
 
 The public site is fully static: the React build plus the release JSON under `/api/v1/`.
 No server, GPU or live MBTA feed is needed at request time.
 
-## Build
+## How it is hosted
+
+| Piece | Where |
+| --- | --- |
+| Code | https://github.com/jai0812/boston-transit-reliability (public) |
+| Hosting | GitHub Pages, built by [`.github/workflows/pages.yml`](../.github/workflows/pages.yml) on every push to `main` |
+| Domain | `mbta.sharmajai.com`, a Cloudflare DNS record: `CNAME mbta → jai0812.github.io`, **DNS only** (grey cloud) |
+| HTTPS | Certificate issued by GitHub Pages; "Enforce HTTPS" on |
+| Fallback URL | https://jai0812.github.io/boston-transit-reliability/ (redirects to the custom domain) |
+
+The Vite build uses a relative base (`./`) and hash routing, so the same build works at the domain root
+and at a project path, and no rewrite rules are needed.
+
+## Publishing a new release
 
 ```bash
-make export   # writes app/web/public/api/v1 from the frozen model run
-make web      # app/web/dist = site + release files
+make build-data train calibrate evaluate export   # writes app/web/public/api/v1
+git add app/web/public/api && git commit -m "Release <id>"
+git push                                          # Pages workflow builds and deploys
 ```
 
-## Host (any static host)
+Every release has its own `release_id`. Rolling back means reverting the commit; the data comes back
+with the code.
 
-| Setting | Value |
+## If something breaks
+
+| Symptom | Check |
 | --- | --- |
-| Root / base directory | `app/web` |
-| Build command | `npm ci && npm run build` |
-| Output directory | `dist` |
-| Node | 22+ |
-
-The release JSON is committed under `app/web/public/api/v1`, so the host only builds the
-frontend. Routing uses `#/…` URLs, so no rewrite rules are needed.
-
-Cache headers: `api/v1/replay/*.json` never changes within a release and is safe to cache
-for a long time. A new release gets a new `release_id`. Rolling back means redeploying the
-earlier commit, and its data comes back with it.
-
-## Custom domain
-
-1. In the host's dashboard add the domain `mbta.sharmajai.com`.
-2. At your DNS provider for sharmajai.com add a record:
-   `CNAME  mbta  →  <the target the host shows>` (for example `cname.vercel-dns.com`,
-   `<site>.netlify.app` or `<project>.pages.dev`).
-3. Wait for the host to issue the HTTPS certificate.
+| Domain shows a GitHub 404 | Repo → Settings → Pages → Custom domain still says `mbta.sharmajai.com` |
+| Certificate error | Cloudflare record must be **DNS only**. A proxied (orange) record blocks GitHub's certificate |
+| Map is blank but the rest works | The basemap host (OpenFreeMap) may be down; the site falls back to lines only |
+| Deploy failed | Repo → Actions → `deploy-pages` logs (`npx tsc -b` or `npm run build`) |
 
 ## Optional API
 
-`app/api/main.py` serves the same contract as JSON endpoints
-(`/v1/release`, `/v1/stations`, `/v1/replay?station_id=&direction_id=&service_date=`,
-`/v1/metrics`, `/healthz`) and the built site on one origin:
+`app/api/main.py` serves the same data as JSON endpoints (`/v1/release`, `/v1/lines`,
+`/v1/stations?line=`, `/v1/replay?line=&station_id=&direction_id=&service_date=`, `/v1/metrics?line=`,
+`/healthz`) together with the built site on one origin:
 
 ```bash
 make serve    # http://localhost:8000
