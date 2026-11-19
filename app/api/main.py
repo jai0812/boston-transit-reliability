@@ -23,7 +23,8 @@ RELEASE_DIR = Path(os.environ.get("RELEASE_DIR", ROOT / "app" / "web" / "public"
 WEB_DIST = ROOT / "app" / "web" / "dist"
 
 app = FastAPI(title="Boston Transit Reliability Explorer", version="1.0",
-              description="Historical Blue Line replay: schedule, day-ahead forecast and recorded arrival.")
+              description="Historical subway replay (Blue, Red, Green): schedule, "
+                          "day-ahead forecast and recorded arrival.")
 
 
 @lru_cache
@@ -58,6 +59,7 @@ class ReplayResponse(BaseModel):
     model_id: str
     nominal_coverage: float
     timezone: str
+    line: str
     service_date: dt.date
     station_id: str
     direction_id: int
@@ -79,19 +81,38 @@ def release(response: Response):
     return r
 
 
+LineId = Query("Blue", pattern=r"^[A-Za-z]+$", max_length=20)
+
+
+def _line(line: str) -> dict:
+    meta = next((x for x in _release()["lines"] if x["id"] == line), None)
+    if meta is None:
+        raise HTTPException(404, f"line {line} is not in this release")
+    return meta
+
+
+@app.get("/v1/lines")
+def lines():
+    return [{k: v for k, v in x.items() if k not in ("replay_dates", "presets")}
+            for x in _release()["lines"]]
+
+
 @app.get("/v1/stations")
-def stations():
-    return _read("stations.json")
+def stations(line: str = LineId):
+    _line(line)
+    return _read(f"lines/{line}/stations.json")
 
 
 @app.get("/v1/metrics")
-def metrics(model: str = Query("lgbm_schedule_cal"), segment: str = Query("all")):
-    m = _read("metrics.json")
+def metrics(line: str = LineId, model: str = Query("lgbm_schedule_cal"),
+            segment: str = Query("all")):
+    _line(line)
+    m = _read(f"lines/{line}/metrics.json")
     if model not in m["results"]:
         raise HTTPException(404, f"unknown model {model}; choose from {sorted(m['results'])}")
     if segment not in m["results"][model]:
         raise HTTPException(404, f"unknown segment {segment}")
-    return {"model": model, "label": m["systems"][model], "segment": segment,
+    return {"line": line, "model": model, "label": m["systems"][model], "segment": segment,
             "result": m["results"][model][segment], "counts": m["counts"],
             "decision": m["decision"]}
 
@@ -102,23 +123,28 @@ def _ts(base: int, off: int | None) -> dt.datetime | None:
 
 @app.get("/v1/replay", response_model=ReplayResponse)
 def replay(response: Response,
+           line: str = LineId,
            station_id: str = Query(..., min_length=3, max_length=40, pattern=r"^[a-z0-9-]+$"),
            direction_id: int = Query(..., ge=0, le=1),
            service_date: dt.date = Query(...)):
     rel = _release()
-    st = next((s for s in _read("stations.json")["stations"] if s["id"] == station_id), None)
+    meta = _line(line)
+    st = next((s for s in _read(f"lines/{line}/stations.json")["stations"]
+               if s["id"] == station_id), None)
     if st is None:
-        raise HTTPException(404, f"station {station_id} is not in this release")
-    dates = {d["service_date"]: d for d in rel["replay_dates"]}
+        raise HTTPException(404, f"station {station_id} is not on the {line} line")
+    dates = {d["service_date"]: d for d in meta["replay_dates"]}
     if service_date.isoformat() not in dates:
         raise HTTPException(404, f"{service_date} is outside this release")
-    platform = st["platforms"].get(str(direction_id))
-    r = _read(f"replay/{service_date.isoformat()}.json")
+    wanted = {p["stop_id"] for p in st["platforms"] if p["dir"] == direction_id}
+    r = _read(f"lines/{line}/replay/{service_date.isoformat()}.json")
     e, trips, base = r["events"], r["trips"], r["base_epoch"]
+    plats = r["platforms"]["stop_id"]
     origin = dt.datetime.fromisoformat(r["forecast_origin_at"])
     items = []
-    for i, stop in enumerate(e["stop"]):
-        if stop != platform:
+    for i, pi in enumerate(e["plat"]):
+        stop = plats[pi]
+        if stop not in wanted:
             continue
         s = e["sched"][i]
         def rel_(d, s=s):
@@ -139,11 +165,12 @@ def replay(response: Response,
         ))
     items.sort(key=lambda x: x.scheduled_at)
     response.headers["Cache-Control"] = "public, max-age=86400, immutable"
-    response.headers["ETag"] = f'"{rel["release_id"]}:{station_id}:{direction_id}:{service_date}"'
+    response.headers["ETag"] = f'"{rel["release_id"]}:{line}:{station_id}:{direction_id}:{service_date}"'
     return ReplayResponse(
         release_id=rel["release_id"], model_id=rel["displayed_model"],
         nominal_coverage=rel["nominal_coverage"], timezone=rel["timezone"],
-        service_date=service_date, station_id=station_id, direction_id=direction_id,
+        line=line, service_date=service_date, station_id=station_id,
+        direction_id=direction_id,
         count=len(items),
         note=None if items else "No scheduled arrivals for this station and direction "
                                 "(a terminal has arrivals in one direction only).",

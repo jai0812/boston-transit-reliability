@@ -1,5 +1,6 @@
 import { scaleLinear } from 'd3-scale'
 import { clock, type Interval, type ReplayEvent } from '../data'
+import { letterOf } from './Board'
 
 type Props = {
   events: ReplayEvent[]
@@ -11,7 +12,7 @@ type Props = {
 const W = 760
 const ROW = 28
 const TOP = 30
-const LEFT = 64
+const LEFT = 78
 const RIGHT = 16
 const BEFORE = 25 * 60
 const AFTER = 65 * 60
@@ -60,7 +61,7 @@ export function Timeline({ events, t, base, pick }: Props) {
           return (
             <g key={e.id}>
               {iv.lo != null && iv.hi != null && (
-                <rect x={x(iv.lo)} y={y - 8} width={Math.max(2, x(iv.hi) - x(iv.lo))} height={16} rx={4} fill="var(--blue-wash)" stroke="var(--blue)" strokeWidth={1} />
+                <rect className="band" x={x(iv.lo)} y={y - 8} width={Math.max(2, x(iv.hi) - x(iv.lo))} height={16} rx={4} fill="var(--blue-wash)" stroke="var(--blue)" strokeWidth={1} />
               )}
               {iv.p50 != null && <rect x={x(iv.p50) - 1.5} y={y - 10} width={3} height={20} fill="var(--blue)" />}
               <circle cx={x(e.sched)} cy={y} r={5} fill="var(--panel)" stroke="var(--sched)" strokeWidth={2.2} />
@@ -82,7 +83,10 @@ export function Timeline({ events, t, base, pick }: Props) {
         })}
       </g>
       {rows.map((e, i) => (
-        <text key={e.id} className="row-label" x={LEFT - 10} y={TOP + i * ROW + ROW / 2 + 4} textAnchor="end">{clock(base, e.sched)}</text>
+        <text key={e.id} className="row-label" x={LEFT - 10} y={TOP + i * ROW + ROW / 2 + 4} textAnchor="end">
+          {letterOf(e.route) && <tspan fontWeight={800} fill="var(--blue)">{letterOf(e.route)} </tspan>}
+          {clock(base, e.sched)}
+        </text>
       ))}
       <g transform={`translate(${x(t)} 0)`}>
         <line y1={TOP - 12} y2={H} stroke="var(--ink)" strokeWidth={2} />

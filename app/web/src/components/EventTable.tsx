@@ -41,7 +41,7 @@ export function EventTable({ events, t, base, pick }: Props) {
               return (
                 <tr key={e.id} className={done ? 'past' : 'future'}>
                   <td>{clock(base, e.sched)}</td>
-                  <td>{e.headsign}</td>
+                  <td>{e.route.startsWith('Green-') ? `${e.route.slice(6)} · ` : ''}{e.headsign}</td>
                   <td>{iv.p50 != null ? clock(base, iv.p50) : 'No estimate'}</td>
                   <td>{iv.lo != null && iv.hi != null ? `${clock(base, iv.lo)}–${clock(base, iv.hi)}` : '—'}</td>
                   <td>{seen ? clock(base, e.obs!) : done ? STATUS_TEXT[e.status] ?? e.status : 'Not yet'}</td>

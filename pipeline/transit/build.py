@@ -87,6 +87,10 @@ def build() -> None:
     DB.unlink(missing_ok=True)
     con = duckdb.connect(str(DB))
     q(con, "SET TimeZone='UTC'")
+    tmp = CURATED / "duckdb_tmp"
+    q(con, f"SET temp_directory='{tmp}'")
+    q(con, "SET memory_limit='9GB'")
+    q(con, "SET preserve_insertion_order=false")
     q(con, """CREATE TABLE date_feed(service_date DATE, feed_key VARCHAR,
                    schedule_published_at TIMESTAMPTZ, feed_version VARCHAR)""")
     con.executemany("INSERT INTO date_feed VALUES (?, ?, ?, ?)",
@@ -99,10 +103,13 @@ def build() -> None:
         UPDATE date_feed SET schedule_after_origin = schedule_published_at > forecast_origin;""")
 
     _load_gtfs(con, sorted({r[1] for r in df_rows if r[1]}))
+    routes = [(r, lid) for lid, ln in cfg["lines"].items() for r in ln["routes"]]
+    q(con, "CREATE TABLE line_routes(route_id VARCHAR, line_id VARCHAR)")
+    con.executemany("INSERT INTO line_routes VALUES (?, ?)", routes).fetchall()
 
     lamp_glob = [str(p) for p in files]
     q(con, f"CREATE TEMP TABLE lamp_raw AS SELECT * FROM read_parquet({lamp_glob}, "
-                "union_by_name=true) WHERE route_id = 'Blue'")
+                "union_by_name=true) WHERE route_id IN (SELECT route_id FROM line_routes)")
     cols = {r[0] for r in q(con, "DESCRIBE lamp_raw")}
     if REQUIRED_LAMP - cols:
         raise SystemExit(f"LAMP files missing columns: {REQUIRED_LAMP - cols}")
@@ -149,26 +156,30 @@ def _features(con: duckdb.DuckDBPyConnection, cfg: dict) -> None:
         scheduled_epoch - lag(scheduled_epoch) OVER (
             PARTITION BY j.service_date, j.stop_id ORDER BY scheduled_epoch, trip_id)
             AS sched_gap_s,
-        count(DISTINCT trip_id) OVER (PARTITION BY j.service_date, j.direction_id)
+        count(DISTINCT trip_id) OVER (PARTITION BY j.service_date, j.route_id, j.direction_id)
             AS day_planned_trips
     FROM joined_events j JOIN date_feed df USING (service_date)
     """)
     # History: same platform, direction and time bucket; dates up to D-lag only.
     q(con, f"""
     CREATE OR REPLACE TABLE history AS
+    -- Daily summaries per platform and time bucket, then rolling windows over days.
+    -- Window medians are medians of daily medians (and of daily p90s): cheap at 13M rows.
     WITH keys AS (SELECT DISTINCT service_date, stop_id, time_bucket FROM base),
-    obs AS (SELECT service_date, stop_id, time_bucket, delay_s FROM base
-            WHERE observation_status = 'observed')
+    daily AS (
+        SELECT service_date, stop_id, time_bucket,
+               median(delay_s) AS med, quantile_cont(delay_s, 0.9) AS p90, count(*) AS n
+        FROM base WHERE observation_status = 'observed' GROUP BY ALL)
     SELECT k.service_date, k.stop_id, k.time_bucket,
-        median(o.delay_s) FILTER (WHERE o.service_date >= k.service_date - {lag + 6})
+        median(d.med) FILTER (WHERE d.service_date >= k.service_date - {lag + 6})
             AS hist7_median_s,
-        median(o.delay_s) AS hist28_median_s,
-        quantile_cont(o.delay_s, 0.9) AS hist28_p90_s,
-        count(o.delay_s) AS hist28_count,
-        max(o.service_date) AS hist_latest_date
+        median(d.med) AS hist28_median_s,
+        median(d.p90) AS hist28_p90_s,
+        coalesce(sum(d.n), 0) AS hist28_count,
+        max(d.service_date) AS hist_latest_date
     FROM keys k
-    LEFT JOIN obs o ON o.stop_id = k.stop_id AND o.time_bucket = k.time_bucket
-        AND o.service_date BETWEEN k.service_date - {lag + 27} AND k.service_date - {lag}
+    LEFT JOIN daily d ON d.stop_id = k.stop_id AND d.time_bucket = k.time_bucket
+        AND d.service_date BETWEEN k.service_date - {lag + 27} AND k.service_date - {lag}
     GROUP BY ALL
     """)
     q(con, """
@@ -187,11 +198,11 @@ def _features(con: duckdb.DuckDBPyConnection, cfg: dict) -> None:
 
 
 def _summary(con: duckdb.DuckDBPyConnection) -> None:
-    print(df(con, """SELECT split, count(*) events,
+    print(df(con, """SELECT line_id, split, count(*) events,
         round(avg((observation_status = 'observed')::INT), 3) match_rate,
         count(DISTINCT service_date) n_days,
         round(median(delay_s) FILTER (WHERE observation_status='observed') / 60, 2) med_delay_min
-        FROM features GROUP BY ALL ORDER BY min(service_date)"""))
+        FROM features GROUP BY ALL ORDER BY line_id, min(service_date)"""))
     print(df(con, """SELECT observation_status, count(*) FROM joined_events GROUP BY ALL
         ORDER BY 2 DESC"""))
     print(df(con, """SELECT round(avg(schedule_after_origin::INT), 3) AS share_schedule_after_origin

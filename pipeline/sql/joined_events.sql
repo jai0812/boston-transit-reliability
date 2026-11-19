@@ -14,9 +14,11 @@ SELECT
          ELSE stop_timestamp END AS observed_epoch,
     scheduled_arrival_time AS lamp_scheduled_offset_s,
     trip_id LIKE 'ADDED-%' AS is_added_trip,
-    vehicle_label
+    vehicle_label,
+    route_id AS lamp_route_id,
+    branch_route_id
 FROM lamp_raw
-WHERE route_id = 'Blue';
+WHERE route_id IN (SELECT route_id FROM line_routes);
 
 -- Duplicate (date, trip, stop) observation rows would create a many-to-many join.
 CREATE OR REPLACE TABLE observation_dupes AS
@@ -55,7 +57,7 @@ LEFT JOIN obs_unique o
 
 CREATE OR REPLACE TABLE data_quality AS
 WITH planned AS (
-    SELECT service_date, direction_id,
+    SELECT service_date, line_id, direction_id,
            count(*) AS planned_events,
            count(*) FILTER (WHERE observation_status = 'source_gap') AS source_gap,
            count(*) FILTER (WHERE observation_status = 'observed') AS observed,
@@ -66,11 +68,12 @@ WITH planned AS (
     FROM joined_events GROUP BY ALL
 ),
 extra AS (
-    SELECT o.service_date, o.direction_id,
+    SELECT o.service_date, lr.line_id, o.direction_id,
            count(*) AS lamp_rows,
            count(*) FILTER (WHERE o.is_added_trip) AS added_trip_rows,
            count(*) FILTER (WHERE p.trip_id IS NULL) AS rows_without_planned_event
     FROM obs_unique o
+    JOIN line_routes lr ON lr.route_id = o.lamp_route_id
     LEFT JOIN planned_events p
       ON o.service_date = p.service_date AND o.trip_id = p.trip_id AND o.stop_id = p.stop_id
     GROUP BY ALL
@@ -78,5 +81,5 @@ extra AS (
 SELECT planned.*, extra.lamp_rows, extra.added_trip_rows, extra.rows_without_planned_event,
        round(observed / nullif(planned_events - source_gap, 0), 4) AS match_rate
 FROM planned
-LEFT JOIN extra USING (service_date, direction_id)
-ORDER BY service_date, direction_id;
+LEFT JOIN extra USING (service_date, line_id, direction_id)
+ORDER BY service_date, line_id, direction_id;

@@ -20,6 +20,7 @@ from pathlib import Path
 import httpx
 import pyarrow.parquet as pq
 
+from .config import data_config
 from .paths import RAW, RAW_GTFS, RAW_LAMP
 
 LAMP_INDEX = "https://performancedata.mbta.com/lamp/subway-on-time-performance-v1/index.csv"
@@ -120,7 +121,7 @@ def fetch_gtfs(start: dt.date, end: dt.date, client: httpx.Client, manifest: dic
     """Fetch every archived feed whose validity window overlaps [start, end].
 
     Only the tables we need are extracted, and stop_times/trips/shapes are filtered to
-    the Blue Line on extraction to keep the cache small.
+    the configured routes on extraction to keep the cache small.
     """
     text = fetch_text(client, GTFS_ARCHIVE_INDEX, "gtfs_archive_index", manifest)
     out = []
@@ -131,7 +132,10 @@ def fetch_gtfs(start: dt.date, end: dt.date, client: httpx.Client, manifest: dic
             continue
         key = row["feed_start_date"]
         dest = RAW_GTFS / key
-        if (dest / "_SUCCESS").exists() and key in manifest["gtfs"]:
+        routes = all_routes()
+        ok = dest / "_SUCCESS"
+        if ok.exists() and key in manifest["gtfs"] and \
+                set(manifest["gtfs"][key].get("routes", ["Blue"])) >= set(routes):
             out.append(dest)
             continue
         dest.mkdir(parents=True, exist_ok=True)
@@ -143,7 +147,7 @@ def fetch_gtfs(start: dt.date, end: dt.date, client: httpx.Client, manifest: dic
             continue
         tmp.replace(zpath)
         sha = _sha256(zpath)
-        _extract_blue(zpath, dest)
+        _extract_routes(zpath, dest, set(routes))
         zpath.unlink()
         (dest / "_SUCCESS").write_text(sha)
         manifest["gtfs"][key] = {
@@ -152,6 +156,7 @@ def fetch_gtfs(start: dt.date, end: dt.date, client: httpx.Client, manifest: dic
             "feed_end_date": fe.isoformat(),
             "feed_version": row["feed_version"],
             "zip_sha256": sha,
+            "routes": sorted(routes),
             "fetched_at": _now(),
         }
         print(f"gtfs {key} {row['feed_version']}")
@@ -159,13 +164,18 @@ def fetch_gtfs(start: dt.date, end: dt.date, client: httpx.Client, manifest: dic
     return out
 
 
-def _extract_blue(zpath: Path, dest: Path) -> None:
+def all_routes() -> list[str]:
+    return [r for line in data_config()["lines"].values() for r in line["routes"]]
+
+
+def _extract_routes(zpath: Path, dest: Path, routes: set[str]) -> None:
+    """Extract the tables we need, filtering trips/stop_times/shapes to our routes."""
     with zipfile.ZipFile(zpath) as z:
         names = set(z.namelist())
         trips_txt = z.read("trips.txt").decode("utf-8-sig")
         trips = list(csv.DictReader(io.StringIO(trips_txt)))
-        blue = {t["trip_id"] for t in trips if t["route_id"] == "Blue"}
-        shapes = {t["shape_id"] for t in trips if t["route_id"] == "Blue"}
+        keep = {t["trip_id"] for t in trips if t["route_id"] in routes}
+        shapes = {t["shape_id"] for t in trips if t["route_id"] in routes}
         for table in GTFS_TABLES:
             fn = f"{table}.txt"
             if fn not in names:
@@ -179,9 +189,9 @@ def _extract_blue(zpath: Path, dest: Path) -> None:
             w = csv.DictWriter(buf, fieldnames=reader.fieldnames, lineterminator="\n")
             w.writeheader()
             for r in reader:
-                if table == "trips" and r["route_id"] == "Blue":
+                if table == "trips" and r["route_id"] in routes:
                     w.writerow(r)
-                elif table == "stop_times" and r["trip_id"] in blue:
+                elif table == "stop_times" and r["trip_id"] in keep:
                     w.writerow(r)
                 elif table == "shapes" and r["shape_id"] in shapes:
                     w.writerow(r)

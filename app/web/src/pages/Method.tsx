@@ -8,8 +8,9 @@ export function Method({ release }: { release: Release }) {
       <p className="lbl">How this works</p>
       <h1 className="page-title">Method</h1>
       <p className="lede">
-        This is a replay of past Blue Line service. For each scheduled train at each platform, a model made a forecast at
-        8 PM the evening before. You can watch that forecast play out against the arrival MBTA actually recorded.
+        This is a replay of past Blue, Red and Green Line service. For each scheduled train at each platform, a model
+        made a forecast at 8 PM the evening before. You can watch that forecast play out against the arrival MBTA
+        actually recorded.
       </p>
 
       <h2>What is predicted</h2>
@@ -29,6 +30,14 @@ export function Method({ release }: { release: Release }) {
         <li><b>Source gaps</b>: some daily files are empty. Those days are marked "no MBTA data" and excluded from denominators.</li>
       </ul>
 
+      <h2>Lines and branches</h2>
+      <ul>
+        <li><b>Blue Line</b>: one trunk, Wonderland to Bowdoin.</li>
+        <li><b>Red Line</b>: a shared trunk from Alewife to JFK/UMass, then the Ashmont and Braintree branches.</li>
+        <li><b>Green Line</b>: four routes (B, C, D, E) that share the central subway and split at Kenmore and Copley, with surface stops on every branch. Trains on the shared tracks show on every branch strip they pass through.</li>
+        <li>Branches are detected from the schedule's own trip patterns. Each line has its own model, calibration and score, so a noisy line cannot widen another line's ranges.</li>
+      </ul>
+
       <h2>Time splits</h2>
       <ul>
         <li>Train: {span('train')}</li>
@@ -42,7 +51,7 @@ export function Method({ release }: { release: Release }) {
       <ul>
         <li><b>Scheduled arrival</b>: predicts zero delay. This is the bar a model has to clear.</li>
         <li><b>Historical baseline</b>: delay percentiles from training data, by platform, time of day and weekday/weekend. It needs at least 50 rows per group and falls back to platform, then line-wide.</li>
-        <li><b>LightGBM</b>: three quantile models (α = 0.10, 0.50, 0.90) on schedule features: platform, direction, stop sequence, weekday, time of day, the scheduled gap to the previous train, and the day's planned service level. Outputs are sorted so the range never crosses.</li>
+        <li><b>LightGBM</b>: three quantile models (α = 0.10, 0.50, 0.90) per line, on schedule features: route/branch, platform, direction, stop sequence, weekday, time of day, the scheduled gap to the previous train, and the day's planned service level. Outputs are sorted so the range never crosses.</li>
         <li><b>Calibrated LightGBM</b>: split conformalized quantile regression (Romano, Patterson &amp; Candès, 2019). Both ends of the range are widened by the score quantile from the calibration weeks.</li>
       </ul>
 
@@ -51,11 +60,12 @@ export function Method({ release }: { release: Release }) {
         {release.retrospective_notes.map((n) => <li key={n}>{n}</li>)}
         <li>Conformal guarantees assume exchangeable data, and consecutive trains are not. Coverage is reported empirically on later weeks, by station and by week, so drift is visible.</li>
         <li>A wider range always covers more. Read coverage together with width and interval score.</li>
+        <li>History features use rolling medians of daily per-platform medians (and of daily 90th percentiles) from D−29 to D−2. That keeps the build tractable at 13 million scheduled arrivals.</li>
         <li>
-          The Blue Line is run to headways, not exact timetables. When a train starts late or another train takes over a
+          Subway lines are run to headways, not exact timetables. When a train starts late or another train takes over a
           scheduled trip's ID, the delay against that trip can reach tens of minutes even though riders still saw frequent
-          trains. In the test weeks 10% of matched arrivals were 24+ minutes behind their trip's schedule, and that spread
-          is already present at the first stop. This is why the ranges are wide, and why a passenger wait-time target is
+          trains. On the Blue Line in the test weeks, 10% of matched arrivals were 24+ minutes behind their trip's
+          schedule, and that spread was already there at the first stop. This is why the ranges are wide, and why a passenger wait-time target is
           the natural next experiment.
         </li>
       </ul>

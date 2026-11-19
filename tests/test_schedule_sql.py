@@ -31,6 +31,7 @@ def _con(dates):
     con.execute("""CREATE TEMP TABLE g_stops AS SELECT * FROM (VALUES
         ('f1','70040','place-gover'), ('f1','70042','place-state'),
         ('f1','70038','place-bomnl')) t(feed_key, stop_id, parent_station)""")
+    con.execute("CREATE TABLE line_routes AS SELECT 'Blue' AS route_id, 'Blue' AS line_id")
     con.execute((SQL / "planned_events.sql").read_text())
     return con
 
@@ -75,9 +76,10 @@ def _join(con, lamp_rows, empty_days=()):
     con.execute("""CREATE OR REPLACE TEMP TABLE lamp_raw(service_date INT, route_id VARCHAR,
         trip_id VARCHAR, stop_id VARCHAR, stop_sequence SMALLINT, direction_id BOOLEAN,
         parent_station VARCHAR, stop_timestamp BIGINT, scheduled_arrival_time BIGINT,
-        vehicle_label VARCHAR)""")
+        vehicle_label VARCHAR, branch_route_id VARCHAR)""")
     if lamp_rows:
-        con.executemany("INSERT INTO lamp_raw VALUES (?,?,?,?,?,?,?,?,?,?)", lamp_rows).fetchall()
+        con.executemany("INSERT INTO lamp_raw VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                        [r + (None,) for r in lamp_rows]).fetchall()
     con.execute("CREATE OR REPLACE TEMP TABLE lamp_empty_days(service_date DATE)")
     for d in empty_days:
         con.execute("INSERT INTO lamp_empty_days VALUES (?)", [d])

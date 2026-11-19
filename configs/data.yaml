@@ -1,5 +1,25 @@
 # Service-date windows. Complete service dates only; one-week embargo between blocks.
-route_id: Blue
+# Lines in the release. Each line is trained, calibrated and scored on its own.
+# order_direction: the GTFS direction whose travel order reads left-to-right on the strip map.
+lines:
+  Blue:
+    name: Blue Line
+    color: "#003DA5"
+    routes: [Blue]
+    order_direction: 1
+    directions: {0: Westbound to Bowdoin, 1: Eastbound to Wonderland}
+  Red:
+    name: Red Line
+    color: "#DA291C"
+    routes: [Red]
+    order_direction: 0
+    directions: {0: Southbound to Ashmont/Braintree, 1: Northbound to Alewife}
+  Green:
+    name: Green Line
+    color: "#00843D"
+    routes: [Green-B, Green-C, Green-D, Green-E]
+    order_direction: 0
+    directions: {0: Westbound, 1: Eastbound}
 timezone: America/New_York
 forecast_origin_local: "20:00"     # day before the service date
 history_start: 2025-06-23          # extra weeks so the first training dates have history features

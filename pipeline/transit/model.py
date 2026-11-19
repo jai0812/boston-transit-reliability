@@ -1,6 +1,7 @@
 """Baselines, LightGBM quantile models, conformal calibration and evaluation.
 
-Stages (each reads the previous stage's artifacts from data/models/):
+Each line (Blue, Red, Green) gets its own models, calibration and scores under
+data/models/<line>/. Stages read the previous stage's artifacts:
   train      fit schedule + historical baselines and search LightGBM on validation
   calibrate  fit the conformal widening on the calibration window (choices are frozen)
   evaluate   score every system once on the test window, write metrics.json
@@ -25,15 +26,29 @@ from .config import data_config, model_config
 from .paths import CURATED, MODELS
 
 DB = CURATED / "transit.duckdb"
-PRED = MODELS / "predictions.parquet"
+
+
+def line_dir(line: str):
+    d = MODELS / line
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def pred_path(line: str):
+    return line_dir(line) / "predictions.parquet"
+
+
+def lines() -> list[str]:
+    return list(data_config()["lines"])
 KEY = ["service_date", "trip_id", "stop_id", "stop_sequence"]
 
 
 # ---------------------------------------------------------------- data
 
-def load_features() -> pd.DataFrame:
+def load_features(line: str) -> pd.DataFrame:
     con = duckdb.connect(str(DB), read_only=True)
-    df = con.execute("SELECT * FROM features ORDER BY service_date, scheduled_epoch").df()
+    df = con.execute("SELECT * FROM features WHERE line_id = ? "
+                     "ORDER BY service_date, scheduled_epoch", [line]).df()
     con.close()
     for c in ("is_weekend", "hist_missing", "schedule_after_origin"):
         df[c] = df[c].astype("float32")
@@ -101,10 +116,10 @@ def predict_historical(model: dict, df: pd.DataFrame) -> pd.DataFrame:
 
 # ---------------------------------------------------------------- train
 
-def train() -> None:
+def train(line: str) -> None:
     mcfg = model_config()
     t0 = time.time()
-    df = load_features()
+    df = load_features(line)
     tr = df[(df.split == "train")]
     va = df[(df.split == "validation")]
     qs = mcfg["quantiles"]
@@ -152,7 +167,7 @@ def train() -> None:
             tag = f"lgbm_{fs_name}_q{int(q * 100):02d}"
             preds[f"{tag}_raw"] = raw[:, i]
             preds[tag] = srt[:, i]
-            d = MODELS / f"lgbm_{fs_name}"
+            d = line_dir(line) / f"lgbm_{fs_name}"
             d.mkdir(parents=True, exist_ok=True)
             models[q].booster_.save_model(str(d / f"q{int(q * 100):02d}.txt"),
                                           num_iteration=models[q].best_iteration_)
@@ -163,9 +178,9 @@ def train() -> None:
             "validation_median_shift_after_sort_s": mid_change,
         }
 
-    preds.to_parquet(PRED, index=False)
+    preds.to_parquet(pred_path(line), index=False)
     report["training_manifest"] = _manifest(t0)
-    (MODELS / "train_report.json").write_text(json.dumps(report, indent=2, default=str))
+    (line_dir(line) / "train_report.json").write_text(json.dumps(report, indent=2, default=str))
     print(f"train done in {time.time() - t0:.0f}s")
 
 
@@ -187,11 +202,11 @@ def _manifest(t0: float) -> dict:
 
 # ---------------------------------------------------------------- calibrate
 
-def calibrate() -> None:
+def calibrate(line: str) -> None:
     mcfg = model_config()
     a = 1 - mcfg["nominal_coverage"]
-    df = load_features()
-    p = pd.read_parquet(PRED)
+    df = load_features(line)
+    p = pd.read_parquet(pred_path(line))
     cal = (p.split == "calibration").values & df.usable.values
     y = df.delay_s.values[cal]
     out = {}
@@ -213,8 +228,8 @@ def calibrate() -> None:
                    "calibration_dates": data_config()["splits"]["calibration"],
                    "calibration_coverage_before": float(np.mean((y >= lo[cal]) & (y <= hi[cal])))}
         print(fs, out[fs])
-    p.to_parquet(PRED, index=False)
-    (MODELS / "calibration.json").write_text(json.dumps(out, indent=2, default=str))
+    p.to_parquet(pred_path(line), index=False)
+    (line_dir(line) / "calibration.json").write_text(json.dumps(out, indent=2, default=str))
 
 
 # ---------------------------------------------------------------- evaluate
@@ -258,11 +273,11 @@ def score(y: np.ndarray, sysd: dict, mask: np.ndarray, alpha: float) -> dict:
     return r
 
 
-def evaluate() -> None:
+def evaluate(line: str) -> None:
     mcfg, cfg = model_config(), data_config()
     alpha = 1 - mcfg["nominal_coverage"]
-    df = load_features()
-    p = pd.read_parquet(PRED)
+    df = load_features(line)
+    p = pd.read_parquet(pred_path(line))
     systems = _systems(p)
     y = df.delay_s.fillna(0).values
     test = (df.split == "test").values
@@ -278,6 +293,10 @@ def evaluate() -> None:
         segs[f"direction_{d}"] = test & usable & (df.direction_id.values == d)
     for b in cfg["time_buckets"]:
         segs[f"bucket_{b}"] = test & usable & (df.time_bucket.values == b)
+    routes = sorted(df.route_id.unique())
+    if len(routes) > 1:
+        for r in routes:
+            segs[f"route_{r}"] = test & usable & (df.route_id.values == r)
     for st in sorted(df.parent_station.unique()):
         segs[f"station_{st}"] = test & usable & (df.parent_station.values == st)
     for w in sorted(week[test].unique()):
@@ -332,7 +351,7 @@ def evaluate() -> None:
            "results": results, "bootstrap": boot, "counts": counts, "decision": decision,
            "nominal_coverage": mcfg["nominal_coverage"],
            "small_group_threshold": 200}
-    (MODELS / "metrics.json").write_text(json.dumps(out, indent=2, default=str))
+    (line_dir(line) / "metrics.json").write_text(json.dumps(out, indent=2, default=str))
     print(pd.DataFrame({k: {m: v["all"].get(m) for m in
                             ("n", "mae_min", "coverage", "width_min", "interval_score_min")}
                         for k, v in results.items()}).T.round(3))
@@ -344,4 +363,8 @@ def evaluate() -> None:
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("stage", choices=["train", "calibrate", "evaluate"])
-    {"train": train, "calibrate": calibrate, "evaluate": evaluate}[ap.parse_args().stage]()
+    ap.add_argument("--line", choices=lines(), help="default: every configured line")
+    a = ap.parse_args()
+    for ln in [a.line] if a.line else lines():
+        print(f"===== {a.stage} {ln}")
+        {"train": train, "calibrate": calibrate, "evaluate": evaluate}[a.stage](ln)
