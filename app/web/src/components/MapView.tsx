@@ -1,6 +1,7 @@
 import * as maplibregl from 'maplibre-gl'
 import type { GeoJSONSource, StyleSpecification } from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
+import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { StationsFile } from '../data'
 import { makeShapePlacer, type TrainPos } from '../trains'
@@ -16,6 +17,9 @@ type Props = {
   arrivals: Arrival[]
   onSelect: (id: string) => void
 }
+
+// Bundlers don't copy MapLibre's worker on their own; point MapLibre at the emitted asset.
+maplibregl.setWorkerUrl(workerUrl)
 
 const STYLE_URL = 'https://tiles.openfreemap.org/styles/positron'
 const DARK_URL = 'https://tiles.openfreemap.org/styles/dark'
